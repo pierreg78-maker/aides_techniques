@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aides Techniques - Autour de la Maison</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; }
+  .card-hover:hover { transform: translateY(-4px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+  .filter-btn.active { background: #2563eb; color: white; }
+  .modal { display: none; }
+  .modal.active { display: flex; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+<header class="bg-blue-700 text-white py-6 shadow-lg">
+  <div class="container mx-auto px-4">
+    <h1 class="text-3xl md:text-4xl font-bold">Aides Techniques</h1>
+    <p class="mt-2 text-blue-100">Autour de la maison – pour l'autonomie au quotidien</p>
+  </div>
+</header>
+
+<div class="container mx-auto px-4 py-6">
+  <!-- Search and Filters -->
+  <div class="bg-white rounded-xl shadow p-4 mb-6">
+    <div class="mb-4">
+      <input type="text" id="search" placeholder="Rechercher par mot-clé (assiette, transfert, préhension, etc.)..." 
+             class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+    </div>
+    
+    <div class="mb-3">
+      <span class="font-semibold text-sm text-gray-600">Zone de l'habitation :</span>
+      <div id="zone-filters" class="flex flex-wrap gap-2 mt-2"></div>
+    </div>
+    
+    <div>
+      <span class="font-semibold text-sm text-gray-600">Besoin / Fonction :</span>
+      <div id="need-filters" class="flex flex-wrap gap-2 mt-2"></div>
+    </div>
+    
+    <div class="mt-4 text-sm text-gray-500">
+      <span id="result-count">0</span> fiches affichées
+      <button id="reset-filters" class="ml-4 text-blue-600 hover:underline">Réinitialiser les filtres</button>
+    </div>
+  </div>
+
+  <!-- Products Grid -->
+  <div id="products-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+</div>
+
+<!-- Modal for details -->
+<div id="modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+    <div class="p-6">
+      <div class="flex justify-between items-start mb-4">
+        <h2 id="modal-title" class="text-2xl font-bold"></h2>
+        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+      </div>
+      <img id="modal-image" class="w-full max-h-64 object-contain rounded-lg mb-4 bg-gray-100" alt="">
+      <div id="modal-content" class="prose max-w-none"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="bg-gray-800 text-white py-6 mt-12">
+  <div class="container mx-auto px-4 text-center text-sm">
+    <p>Aides techniques pour l'autonomie – Fiches issues de documentation professionnelle</p>
+    <p class="mt-2 text-gray-400">Pour ajouter ou modifier une fiche : éditez le fichier <code>products.json</code> et ajoutez l'image dans le dossier <code>images/</code></p>
+  </div>
+</footer>
+
+<script>
+let allProducts = [];
+let activeZones = new Set();
+let activeNeeds = new Set();
+
+const needCategories = {
+  "Préhension / Prise en main": ["préhension", "prise", "main", "poignée", "tremblement", "dextérité", "force", "arthrite"],
+  "Stabilité / Anti-renversement": ["ventouse", "antidérapant", "stable", "renversement", "glisser", "anti-renversement"],
+  "Transfert / Verticalisation": ["transfert", "lever", "asseoir", "relevage", "verticalisation", "guidon"],
+  "Mobilité / Déplacement": ["marche", "déambulateur", "canne", "déplacement", "rampe"],
+  "Hygiène / Toilette": ["toilette", "douche", "bain", "wc", "shampoing", "hygiène"],
+  "Cuisine / Repas": ["assiette", "bol", "verre", "couvert", "manger", "cuisine", "repas"],
+  "Chambre / Lit": ["lit", "couette", "chute", "rehaussement", "buste"]
+};
+
+async function loadProducts() {
+  try {
+    const response = await fetch('products.json');
+    allProducts = await response.json();
+    initFilters();
+    renderProducts(allProducts);
+  } catch (e) {
+    document.getElementById('products-grid').innerHTML = 
+      '<p class="col-span-full text-red-600">Erreur de chargement des données. Assurez-vous que products.json est accessible.</p>';
+  }
+}
+
+function initFilters() {
+  const zones = [...new Set(allProducts.map(p => p.zone))].sort();
+  const zoneContainer = document.getElementById('zone-filters');
+  zones.forEach(zone => {
+    const btn = document.createElement('button');
+    btn.textContent = zone;
+    btn.className = 'px-3 py-1 rounded-full text-sm border border-blue-300 bg-blue-50 hover:bg-blue-100 transition';
+    btn.onclick = () => toggleFilter(activeZones, zone, btn);
+    zoneContainer.appendChild(btn);
+  });
+
+  const needContainer = document.getElementById('need-filters');
+  Object.keys(needCategories).forEach(need => {
+    const btn = document.createElement('button');
+    btn.textContent = need;
+    btn.className = 'px-3 py-1 rounded-full text-sm border border-green-300 bg-green-50 hover:bg-green-100 transition';
+    btn.onclick = () => toggleFilter(activeNeeds, need, btn);
+    needContainer.appendChild(btn);
+  });
+}
+
+function toggleFilter(set, value, btn) {
+  if (set.has(value)) {
+    set.delete(value);
+    btn.classList.remove('active', 'bg-blue-600', 'text-white');
+    btn.classList.add('bg-blue-50');
+  } else {
+    set.add(value);
+    btn.classList.add('active', 'bg-blue-600', 'text-white');
+    btn.classList.remove('bg-blue-50');
+  }
+  applyFilters();
+}
+
+function matchesNeed(product, need) {
+  const keywords = needCategories[need] || [];
+  const text = (product.full_text + " " + product.name).toLowerCase();
+  return keywords.some(k => text.includes(k));
+}
+
+function applyFilters() {
+  const query = document.getElementById('search').value.toLowerCase().trim();
+  const filtered = allProducts.filter(p => {
+    // Zone filter
+    if (activeZones.size > 0 && !activeZones.has(p.zone)) return false;
+    // Need filter
+    if (activeNeeds.size > 0 && ![...activeNeeds].some(n => matchesNeed(p, n))) return false;
+    // Keyword search
+    if (query) {
+      const searchable = (p.name + " " + p.full_text + " " + p.zone + " " + (p.keywords||[]).join(" ")).toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  renderProducts(filtered);
+}
+
+function renderProducts(products) {
+  const grid = document.getElementById('products-grid');
+  document.getElementById('result-count').textContent = products.length;
+  
+  if (products.length === 0) {
+    grid.innerHTML = '<p class="col-span-full text-center text-gray-500 py-12">Aucune fiche ne correspond à vos critères.</p>';
+    return;
+  }
+  
+  grid.innerHTML = products.map(p => {
+    const img = p.images && p.images[0] ? p.images[0] : '';
+    const shortDesc = (p.permet || p.descriptions || p.full_text).substring(0, 120) + '...';
+    return `
+      <div class="bg-white rounded-xl shadow card-hover transition-all duration-200 overflow-hidden cursor-pointer" onclick="openModal(${p.id})">
+        ${img ? `<img src="${img}" alt="${p.name}" class="w-full h-48 object-contain bg-gray-100">` : '<div class="h-48 bg-gray-200 flex items-center justify-center text-gray-400">Pas d\'image</div>'}
+        <div class="p-4">
+          <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mb-2">${p.zone}</span>
+          <h3 class="font-bold text-lg mb-2">${p.name}</h3>
+          <p class="text-sm text-gray-600">${shortDesc}</p>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openModal(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('modal-title').textContent = p.name;
+  const imgEl = document.getElementById('modal-image');
+  if (p.images && p.images[0]) {
+    imgEl.src = p.images[0];
+    imgEl.style.display = 'block';
+  } else {
+    imgEl.style.display = 'none';
+  }
+  
+  let html = `<p class="text-sm text-blue-600 mb-3 font-medium">${p.zone}</p>`;
+  if (p.descriptions) html += `<div class="mb-3"><strong>Description :</strong><br>${p.descriptions.replace(/\n/g, '<br>')}</div>`;
+  if (p.permet) html += `<div class="mb-3"><strong>Permet de :</strong><br>${p.permet.replace(/\n/g, '<br>')}</div>`;
+  if (p.ideal) html += `<div class="mb-3"><strong>Idéal pour :</strong><br>${p.ideal.replace(/\n/g, '<br>')}</div>`;
+  if (p.caracteristiques) html += `<div class="mb-3"><strong>Caractéristiques :</strong><br>${p.caracteristiques.replace(/\n/g, '<br>')}</div>`;
+  if (p.other_text) html += `<div class="mb-3">${p.other_text.replace(/\n/g, '<br>')}</div>`;
+  
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('active');
+}
+
+document.getElementById('search').addEventListener('input', applyFilters);
+document.getElementById('reset-filters').addEventListener('click', () => {
+  activeZones.clear();
+  activeNeeds.clear();
+  document.getElementById('search').value = '';
+  document.querySelectorAll('#zone-filters button, #need-filters button').forEach(btn => {
+    btn.classList.remove('active', 'bg-blue-600', 'text-white');
+    btn.classList.add('bg-blue-50');
+  });
+  applyFilters();
+});
+
+// Close modal on background click
+document.getElementById('modal').addEventListener('click', (e) => {
+  if (e.target.id === 'modal') closeModal();
+});
+
+loadProducts();
+</script>
+</body>
+</html>
